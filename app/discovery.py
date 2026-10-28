@@ -3,6 +3,9 @@
 Standing rules (test-pinned, straight from the fleet):
 - every description is < 500 chars (the catalog limit) and carries a
   "Use this when" sentence;
+- every description ends with the payable clause for the stall's
+  rails (see PAYABLE_CLAUSES below) — a rail the description doesn't
+  mention is a rail nobody uses;
 - every route's output schema is a FULL typed object schema — never
   the hollow {"type": "object"} shape inspectors grade down;
 - output examples stay well under the ~1.5 KB sample ceiling some
@@ -80,6 +83,51 @@ ROUTES: dict[str, dict] = {
         },
     },
 }
+
+# --- payable-clause pattern (dual-rail description wording) ----------
+# When a route accepts payment on more than one rail, SAY SO in the
+# description, with exactly this clause — the fleet's shipped wording
+# (Token Verdict, 2026-10-27, when its Solana accepts went live on all
+# three of its routes alongside Base). Buyers and indexers read
+# descriptions to learn how they can pay; a rail the description
+# doesn't mention is a rail nobody uses. Keep the clause LAST and
+# verbatim so catalog diffing sees a clean, comparable string, and
+# set RAILS to match the accepts your 402 actually carries:
+# "base", "solana", or "base+solana" for a dual-accept stall.
+PAYABLE_CLAUSES = {
+    "base": "Payable in USDC on Base.",
+    "solana": "Payable in USDC on Solana.",
+    "base+solana": "Payable in USDC on Base or Solana.",
+}
+
+# This template's rail. A stall that adds a second accept changes
+# this one constant and every description follows.
+RAILS = "solana"
+
+
+def payable_clause(rails: str) -> str:
+    return PAYABLE_CLAUSES[rails]
+
+
+def with_payable_clause(description: str, rails: str) -> str:
+    """Append the payable clause for `rails` (idempotent).
+
+    Raises ValueError if the result would break the <500-char
+    catalog limit — shorten the prose, never the clause.
+    """
+    clause = payable_clause(rails)
+    if clause in description:
+        return description
+    out = f"{description.rstrip()} {clause}" if description.strip() else clause
+    if len(out) >= 500:
+        raise ValueError(
+            f"description with payable clause is {len(out)} chars (limit <500)"
+        )
+    return out
+
+
+for _r in ROUTES.values():
+    _r["description"] = with_payable_clause(_r["description"], RAILS)
 
 for _path, _r in ROUTES.items():
     assert len(_r["description"]) < 500, f"{_path} description too long"

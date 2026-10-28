@@ -13,6 +13,7 @@ You get:
 |---|---|---|
 | Paywall middleware | `app/paywall.py` | x402 v2 `exact` on Solana via the official SDK's SVM scheme; unpaid calls get a 402 whose accepts carry your price, the USDC mint, and your payTo |
 | Pack accounting | `app/packs.py` | Prepaid credit packs in sqlite: idempotent mint (a re-presented payment never mints twice), atomic debit, free balance reads, exhausted → 402 / expired → 410, **no silent per-call fallback** |
+| Freshness guard | `app/freshness.py` | Refuse to serve from a stale snapshot: paid routes 502 before settlement, subscription cycles skip with no debit |
 | Discovery generator | `app/discovery.py` | One route table → `/.well-known/x402` manifest + a full Bazaar extension per route (typed output schema, example ≤ ~1.5 KB) |
 | Example stall | `app/main.py` | `POST /v1/word-count` ($0.01) + pack buy/balance, `/health`, landing page |
 | Keepalive | `scripts/keepalive.py` | Health watchdog: probes `/health`, logs, non-zero exit on a failure streak — run it from cron |
@@ -68,6 +69,21 @@ loops and agents, the fleet's defaults are:
    and `/health` says which mode is live (`storage` block).
 6. **Packs never fall back.** An exhausted pack returns 402 and an
    expired one 410 — never a surprise per-call charge.
+7. **Name every rail you accept, in the description.** Every route
+   description ends with the payable clause for the stall's rails
+   (`app/discovery.py`: `PAYABLE_CLAUSES`, driven by the `RAILS`
+   constant — "Payable in USDC on Base or Solana." for a dual-accept
+   stall). Buyers and indexers read descriptions to learn how they
+   can pay; a rail the description doesn't mention is a rail nobody
+   uses. Keep `RAILS` honest: it must match the accepts your 402
+   actually carries.
+8. **Snapshot products refuse stale data.** If a route serves from
+   a periodically refreshed snapshot (a catalog diff, an alert
+   feed, a watchlist), guard it with `app/freshness.py`: a paid
+   route answers 502 *before* settlement when the snapshot is older
+   than its cadence, and a subscription cycle skips with no debit.
+   Serving stale data as current is worse than an error — buyers
+   act on it.
 
 ## Facilitator choice = catalog choice
 
